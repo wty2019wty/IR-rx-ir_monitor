@@ -12,7 +12,7 @@
 
 #define IR_RESOLUTION_HZ    500000U    /* 1 RMT tick = 2 us; slower clock allows a longer 50ms idle timeout */
 #define IR_RX_GPIO          CONFIG_IR_MONITOR_IR_RX_GPIO
-#define IR_BUF_SYMBOLS      512
+#define IR_BUF_SYMBOLS      2048
 #define IR_RX_MIN_PULSE_NS  1000U      /* glitches < 1 us are ignored */
 #define IR_RX_TIMEOUT_NS    50000000U  /* idle gap > 50 ms ends the frame */
 
@@ -233,7 +233,7 @@ esp_err_t ir_capture_init(void)
         .gpio_num = IR_RX_GPIO,
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = IR_RESOLUTION_HZ,
-        .mem_block_symbols = 256,
+        .mem_block_symbols = 2048,
         .intr_priority = 0,
         .flags = {
             .invert_in = false,

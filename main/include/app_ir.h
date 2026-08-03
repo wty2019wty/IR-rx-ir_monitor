@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "esp_err.h"
 
-#define IR_RAW_MAX_SEGS 1024
+#define IR_RAW_MAX_SEGS 4096
 
 typedef struct {
     bool valid;               /* at least one frame captured since boot */

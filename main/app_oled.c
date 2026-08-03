@@ -15,6 +15,26 @@
 static uint8_t s_fb[OLED_W * OLED_H / 8];
 static i2c_master_dev_handle_t s_oled_dev;
 
+static esp_err_t oled_detect_addr(i2c_master_bus_handle_t bus, uint16_t *out_addr)
+{
+    /* Most SSD1315/SSD1306 modules use 0x3C; some use 0x3D (SA0=1) */
+    uint16_t candidates[2] = {
+        OLED_I2C_ADDR,
+        (uint16_t)(OLED_I2C_ADDR ^ 0x01),
+    };
+    for (int i = 0; i < 2; i++) {
+        esp_err_t err = i2c_master_probe(bus, candidates[i], 200);
+        if (err == ESP_OK) {
+            *out_addr = candidates[i];
+            ESP_LOGI(TAG, "OLED detected at 0x%02X", candidates[i]);
+            return ESP_OK;
+        }
+    }
+    ESP_LOGE(TAG, "OLED NOT detected at 0x%02X / 0x%02X: check SDA/SCL wiring, VCC/GND and pull-ups",
+             candidates[0], candidates[1]);
+    return ESP_ERR_NOT_FOUND;
+}
+
 static esp_err_t oled_write_cmd(const uint8_t *cmds, size_t len)
 {
     uint8_t pkt[16];
@@ -35,15 +55,18 @@ esp_err_t oled_init(void)
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt = 7,
         .intr_priority = 0,
-        .trans_queue_depth = 64,
+        .trans_queue_depth = 0, /* synchronous mode: bus errors are visible and i2c_master_probe works */
         .flags.enable_internal_pullup = true,
     };
     i2c_master_bus_handle_t bus = NULL;
     ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_cfg, &bus), TAG, "create I2C bus");
 
+    uint16_t oled_addr;
+    ESP_RETURN_ON_ERROR(oled_detect_addr(bus, &oled_addr), TAG, "OLED not found on I2C bus");
+
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = OLED_I2C_ADDR,
+        .device_address = oled_addr,
         .scl_speed_hz = OLED_I2C_CLK_HZ,
         .scl_wait_us = 0,
         .flags.disable_ack_check = false,

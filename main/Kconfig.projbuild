@@ -30,10 +30,10 @@ menu "IR Monitor Configuration"
 
     config IR_MONITOR_BTN_OK_GPIO
         int "Button OK GPIO"
-        default 37
+        default 1
 
     config IR_MONITOR_BTN_BACK_GPIO
         int "Button BACK GPIO"
-        default 36
+        default 2
 
 endmenu

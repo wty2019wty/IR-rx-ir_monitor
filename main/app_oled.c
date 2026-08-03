@@ -35,7 +35,7 @@ esp_err_t oled_init(void)
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt = 7,
         .intr_priority = 0,
-        .trans_queue_depth = 8,
+        .trans_queue_depth = 64,
         .flags.enable_internal_pullup = true,
     };
     i2c_master_bus_handle_t bus = NULL;
@@ -85,10 +85,10 @@ void oled_flush(void)
     };
     oled_write_cmd(cmds, sizeof(cmds));
 
-    for (int i = 0; i < (int)sizeof(s_fb); i += 32) {
-        uint8_t pkt[33];
+    for (int i = 0; i < (int)sizeof(s_fb); i += 128) {
+        uint8_t pkt[129];
         pkt[0] = 0x40; /* control byte: data stream */
-        memcpy(pkt + 1, s_fb + i, 32);
+        memcpy(pkt + 1, s_fb + i, 128);
         i2c_master_transmit(s_oled_dev, pkt, sizeof(pkt), 50);
     }
 }

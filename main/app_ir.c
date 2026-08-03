@@ -10,7 +10,7 @@
 
 #define TAG "ir"
 
-#define IR_RESOLUTION_HZ    1000000U   /* 1 RMT tick = 1 us */
+#define IR_RESOLUTION_HZ    500000U    /* 1 RMT tick = 2 us; slower clock allows a longer 50ms idle timeout */
 #define IR_RX_GPIO          CONFIG_IR_MONITOR_IR_RX_GPIO
 #define IR_BUF_SYMBOLS      512
 #define IR_RX_MIN_PULSE_NS  1000U      /* glitches < 1 us are ignored */
@@ -24,7 +24,7 @@
 #define NEC_BIT1_SPACE_US   1690U
 
 typedef struct {
-    uint16_t dur; /* duration in us */
+    uint32_t dur; /* duration in us */
     uint8_t level;
 } ir_seg_t;
 
@@ -59,12 +59,12 @@ static void ir_analyze(const rmt_symbol_word_t *sym, size_t num, ir_frame_t *f)
     for (size_t i = 0; i < num && n < IR_RAW_MAX_SEGS; i++) {
         if (sym[i].duration0 > 0) {
             s_segs[n].level = sym[i].level0;
-            s_segs[n].dur = sym[i].duration0;
+            s_segs[n].dur = (uint32_t)sym[i].duration0 * 2;
             n++;
         }
         if (n < IR_RAW_MAX_SEGS && sym[i].duration1 > 0) {
             s_segs[n].level = sym[i].level1;
-            s_segs[n].dur = sym[i].duration1;
+            s_segs[n].dur = (uint32_t)sym[i].duration1 * 2;
             n++;
         }
     }

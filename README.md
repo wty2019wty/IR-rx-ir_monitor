@@ -20,10 +20,15 @@
 | OLED SCL | GPIO9 | I2C 时钟（400kHz） |
 | 按键-上 | GPIO39 | 菜单上移 |
 | 按键-下 | GPIO38 | 菜单下移 |
-| 按键-确定 | GPIO37 | 确认 / 进入 / 暂停切换 |
-| 按键-返回 | GPIO36 | 返回上级 |
+| 按键-确定 | GPIO1 | 确认 / 进入 / 暂停切换 |
+| 按键-返回 | GPIO2 | 返回上级 |
 
 按键接 GND，内部上拉使能，按下为低电平。OLED 建议外接 4.7k 上拉。
+
+> ⚠️ 重要：N16R8 模块启用 8MB 八线 PSRAM 时，GPIO33~37 被 PSRAM 占用
+> （GPIO36=SPIIO7、GPIO37=SPIDQS），**不能**用作普通 GPIO，否则会损坏 PSRAM 访问
+> 导致看门狗复位。GPIO26~32 为 Flash 引脚同样不可用。请避开这些引脚。
+> 引脚可在 `idf.py menuconfig` → "IR Monitor Configuration" 中修改。
 
 ## 操作说明
 
@@ -71,7 +76,7 @@ idf.py menuconfig
 
 ## 实现说明
 
-- RMT RX 使用 1MHz 分辨率（1 tick = 1us），DMA 缓冲 512 个 symbol，
+- RMT RX 使用 500kHz 分辨率（1 tick = 2us），DMA 缓冲 512 个 symbol，
   空闲 50ms 判定一帧结束，可覆盖 NEC 及大部分长帧空调遥控器。
 - NEC 解码采用"扫描 9ms 引导码"的方式，不依赖信号极性，容错范围较官方示例更宽，
   支持 8 位/16 位地址 NEC 与重复码。

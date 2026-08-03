@@ -1,5 +1,5 @@
 #include "esp_log.h"
-#include "esp_check.h"
+#include "esp_err.h"
 #include "app_oled.h"
 #include "app_ir.h"
 #include "app_ui.h"
@@ -10,12 +10,24 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "IR signal monitor starting");
 
-    ESP_RETURN_ON_ERROR(oled_init(), TAG, "OLED init failed");
+    esp_err_t err = oled_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "OLED init failed: %s", esp_err_to_name(err));
+        return;
+    }
     ESP_LOGI(TAG, "OLED ready");
 
-    ESP_RETURN_ON_ERROR(ir_capture_init(), TAG, "IR capture init failed");
+    err = ir_capture_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "IR capture init failed: %s", esp_err_to_name(err));
+        return;
+    }
     ESP_LOGI(TAG, "IR capture ready");
 
-    ESP_RETURN_ON_ERROR(ui_init(), TAG, "UI init failed");
+    err = ui_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "UI init failed: %s", esp_err_to_name(err));
+        return;
+    }
     ESP_LOGI(TAG, "IR signal monitor ready");
 }

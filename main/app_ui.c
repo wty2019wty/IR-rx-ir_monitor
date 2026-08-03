@@ -88,7 +88,7 @@ static const char *raw_hint(void)
 
 static void draw_mode_header(const char *mode)
 {
-    char line[24];
+    char line[40];
     snprintf(line, sizeof(line), "%s %s #%04lu",
              mode, s_paused ? "PAUSE" : "LIVE ", (unsigned long)s_disp.seq);
     oled_draw_text(0, 0, line, false);
@@ -121,7 +121,7 @@ static void draw_raw(void)
         oled_draw_text_center(24, "WAITING FOR IR...", false);
         oled_draw_text_center(40, "POINT REMOTE AT RX", false);
     } else {
-        char line[24];
+        char line[40];
         snprintf(line, sizeof(line), "EDGE %lu  DUR %lu.%02lums",
                  (unsigned long)s_disp.seg_count,
                  (unsigned long)(s_disp.total_us / 1000),
@@ -160,7 +160,7 @@ static void draw_nec(void)
         oled_draw_text_center(24, "WAITING FOR NEC...", false);
         oled_draw_text_center(40, "POINT REMOTE AT RX", false);
     } else if (s_disp.nec_ok && s_disp.nec_repeat) {
-        char line[24];
+        char line[40];
         snprintf(line, sizeof(line), "REPEAT CODE");
         oled_draw_text(0, 8, line, false);
         snprintf(line, sizeof(line), "ADDR 0x%04X", (unsigned)s_disp.nec_addr);
@@ -169,7 +169,7 @@ static void draw_nec(void)
         oled_draw_text(0, 24, line, false);
         oled_draw_text(0, 32, "KEY HELD DOWN", false);
     } else if (s_disp.nec_ok) {
-        char line[24];
+        char line[40];
         if (s_disp.nec_ext_addr) {
             snprintf(line, sizeof(line), "ADDR16 0x%04X CMD 0x%02X",
                      (unsigned)s_disp.nec_addr, (unsigned)(s_disp.nec_cmd & 0xFF));
@@ -189,7 +189,7 @@ static void draw_nec(void)
         }
         oled_draw_text(0, 24, line, false);
     } else {
-        char line[24];
+        char line[40];
         snprintf(line, sizeof(line), "NOT NEC  EDGE %lu", (unsigned long)s_disp.seg_count);
         oled_draw_text(0, 8, line, false);
         snprintf(line, sizeof(line), "DUR %lu.%02lums",

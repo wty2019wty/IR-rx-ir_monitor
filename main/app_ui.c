@@ -143,7 +143,11 @@ static void draw_raw(void)
                  (unsigned long)s_disp.max_pulse_us);
         oled_draw_text(0, 32, line, false);
 
-        snprintf(line, sizeof(line), "HINT %s", raw_hint());
+        if (s_disp.nec_ok) {
+            snprintf(line, sizeof(line), "HEX %08lX", (unsigned long)s_disp.nec_raw);
+        } else {
+            snprintf(line, sizeof(line), "HINT %s", raw_hint());
+        }
         oled_draw_text(0, 40, line, false);
     }
 

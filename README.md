@@ -1,13 +1,13 @@
 # ESP32-S3 红外遥控信号监视器
 
 基于 ESP32-S3-N16R8（16MB Flash / 8MB PSRAM）与 ESP-IDF v6.0.2。
-通过 VS1838B 接收红外遥控信号，使用 RMT 以 1us 分辨率采集原始波形，
+通过 VS1838B 接收红外遥控信号，使用 RMT 以 2us 分辨率采集原始波形，
 在 SSD1315（128x64，兼容 SSD1306 指令集）OLED 上实时显示。
 
 两种监视模式：
 
 1. **RAW SIGNAL FEATURES**（原始信号特征）— 显示跳变沿数量、总时长、引导脉冲/间隔、
-   脉冲数量、最小/最大数据脉冲、最后间隔，以及协议类型提示。
+   脉冲数量、最小/最大数据脉冲、最后间隔，以及协议类型提示（若成功解码 NEC 则显示 32 位 Hex）。
 2. **NEC DECODE**（NEC 解码）— 显示地址、命令、32 位原始码、校验状态，并识别重复码
    （按键长按）与扩展 16 位地址 NEC。
 
@@ -25,9 +25,9 @@
 
 按键接 GND，内部上拉使能，按下为低电平。OLED 建议外接 4.7k 上拉。
 
-> ⚠️ 重要：N16R8 模块启用 8MB 八线 PSRAM 时，GPIO33~37 被 PSRAM 占用
+> ⚠️ 重要：N16R8 模块启用 8MB 八线 PSRAM 时，GPIO33-37 被 PSRAM 占用
 > （GPIO36=SPIIO7、GPIO37=SPIDQS），**不能**用作普通 GPIO，否则会损坏 PSRAM 访问
-> 导致看门狗复位。GPIO26~32 为 Flash 引脚同样不可用。请避开这些引脚。
+> 导致看门狗复位。GPIO26-32 为 Flash 引脚同样不可用。请避开这些引脚。
 > 引脚可在 `idf.py menuconfig` → "IR Monitor Configuration" 中修改。
 
 ## 操作说明
@@ -42,18 +42,22 @@
 ## 工程结构
 
 ```
-IR-rx/
+IR-rx-ir_monitor/
 ├── CMakeLists.txt
 ├── sdkconfig.defaults        # esp32s3 / 16MB flash / 8MB 八线 PSRAM
 ├── main/
 │   ├── CMakeLists.txt
 │   ├── Kconfig.projbuild     # 引脚、OLED 地址等可配置项
 │   ├── app_main.c
-│   ├── app_ir.c / app_ir.h   # RMT 采集 + 原始特征分析 + NEC 解码
-│   ├── app_oled.c / app_oled.h # SSD1315 I2C 驱动（帧缓冲）
-│   ├── app_ui.c / app_ui.h   # 菜单 / 按键 / 界面状态机
-│   ├── font5x7.c / font5x7.h # 5x7 ASCII 字体
+│   ├── app_ir.c              # RMT 采集 + 原始特征分析 + NEC 解码
+│   ├── app_oled.c            # SSD1315 I2C 驱动（帧缓冲）
+│   ├── app_ui.c              # 菜单 / 按键 / 界面状态机
+│   ├── font5x7.c             # 5x7 ASCII 字体
 │   └── include/
+│       ├── app_ir.h
+│       ├── app_oled.h
+│       ├── app_ui.h
+│       └── font5x7.h
 ```
 
 ## 编译与烧录
@@ -62,7 +66,7 @@ IR-rx/
 
 ```powershell
 & 'D:\esp\v6.0.2\esp-idf\export.ps1'
-cd G:\esp32s3\IR-rx
+cd IR-rx-ir_monitor
 idf.py build
 idf.py -p COMx flash monitor
 ```

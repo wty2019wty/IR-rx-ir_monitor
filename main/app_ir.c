@@ -211,8 +211,6 @@ static uint32_t ir_count_saved_recordings(void)
         if (stat(filepath, &st) == 0) {
             count++;
         }
-        /* Yield periodically to prevent watchdog timeout */
-        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
     return count;
@@ -230,7 +228,6 @@ static esp_err_t ir_find_free_index(uint32_t *out_index)
             *out_index = i;
             return ESP_OK;
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
     ESP_LOGE(TAG, "No free recording slot (max %d)", IR_MAX_RECORDINGS);

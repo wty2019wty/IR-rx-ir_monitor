@@ -15,7 +15,23 @@
 #define OLED_SCL_GPIO   CONFIG_IR_MONITOR_OLED_SCL_GPIO
 
 static uint8_t s_fb[OLED_W * OLED_H / 8];
+static i2c_master_bus_handle_t s_bus;
 static i2c_master_dev_handle_t s_oled_dev;
+
+static esp_err_t oled_transmit(const uint8_t *buf, size_t len)
+{
+    esp_err_t ret;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        ret = i2c_master_transmit(s_oled_dev, buf, len, 100);
+        if (ret == ESP_OK) {
+            return ESP_OK;
+        }
+        /* Recover a stuck/stretched bus before retrying */
+        i2c_master_bus_reset(s_bus);
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    return ret;
+}
 
 static esp_err_t oled_detect_addr(i2c_master_bus_handle_t bus, uint16_t *out_addr)
 {
@@ -25,7 +41,7 @@ static esp_err_t oled_detect_addr(i2c_master_bus_handle_t bus, uint16_t *out_add
         (uint16_t)(OLED_I2C_ADDR ^ 0x01),
     };
     for (int i = 0; i < 2; i++) {
-        esp_err_t err = i2c_master_probe(bus, candidates[i], pdMS_TO_TICKS(200));
+        esp_err_t err = i2c_master_probe(bus, candidates[i], 200);
         if (err == ESP_OK) {
             *out_addr = candidates[i];
             ESP_LOGI(TAG, "OLED detected at 0x%02X", candidates[i]);
@@ -45,13 +61,7 @@ static esp_err_t oled_write_cmd(const uint8_t *cmds, size_t len)
     }
     pkt[0] = 0x00; /* control byte: command stream */
     memcpy(pkt + 1, cmds, len);
-    esp_err_t ret;
-    for (int retry = 0; retry < 3; retry++) {
-        ret = i2c_master_transmit(s_oled_dev, pkt, len + 1, pdMS_TO_TICKS(100));
-        if (ret == ESP_OK) return ESP_OK;
-        vTaskDelay(pdMS_TO_TICKS(1));
-    }
-    return ret;
+    return oled_transmit(pkt, len + 1);
 }
 
 esp_err_t oled_init(void)
@@ -68,15 +78,28 @@ esp_err_t oled_init(void)
     };
     i2c_master_bus_handle_t bus = NULL;
     ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_cfg, &bus), TAG, "create I2C bus");
+    s_bus = bus;
+
+    /* Clear the bus in case a previous session was interrupted mid-transaction:
+     * the OLED can then be holding SDA low, which would make every probe fail
+     * with a transaction timeout. Bus clear releases the stuck slave. */
+    i2c_master_bus_reset(bus);
 
     uint16_t oled_addr;
-    ESP_RETURN_ON_ERROR(oled_detect_addr(bus, &oled_addr), TAG, "OLED not found on I2C bus");
+    esp_err_t detect_err = ESP_ERR_NOT_FOUND;
+    for (int attempt = 0; attempt < 3 && detect_err != ESP_OK; attempt++) {
+        detect_err = oled_detect_addr(bus, &oled_addr);
+        if (detect_err != ESP_OK) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+    }
+    ESP_RETURN_ON_ERROR(detect_err, TAG, "OLED not found on I2C bus");
 
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = oled_addr,
         .scl_speed_hz = OLED_I2C_CLK_HZ,
-        .scl_wait_us = 50,  /* give slave time to clock-stretch */
+        .scl_wait_us = 0,  /* use driver default (2000us) so clock-stretching is tolerated */
         .flags.disable_ack_check = false,
     };
     ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(bus, &dev_cfg, &s_oled_dev), TAG, "add OLED device");
@@ -130,11 +153,7 @@ void oled_flush(void)
         uint8_t pkt[129];
         pkt[0] = 0x40; /* control byte: data stream */
         memcpy(pkt + 1, s_fb + i, 128);
-        for (int retry = 0; retry < 3; retry++) {
-            esp_err_t ret = i2c_master_transmit(s_oled_dev, pkt, sizeof(pkt), pdMS_TO_TICKS(100));
-            if (ret == ESP_OK) break;
-            vTaskDelay(pdMS_TO_TICKS(1));
-        }
+        oled_transmit(pkt, sizeof(pkt));
     }
 }
 

@@ -10,12 +10,18 @@
 
 #define TAG "ui"
 
-#define MENU_ITEMS 2
+#define MENU_ITEMS 4
+#define MAX_VISIBLE_ITEMS 4
+#define PLAYBACK_REPEAT_COUNT 3
 
 typedef enum {
     SCR_MENU,
     SCR_RAW,
     SCR_NEC,
+    SCR_PLAYBACK,
+    SCR_STORAGE,
+    SCR_DELETE_CONFIRM,
+    SCR_DELETE_SELECT,
 } screen_t;
 
 typedef struct {
@@ -25,8 +31,10 @@ typedef struct {
 } btn_t;
 
 static const char *const s_menu_items[MENU_ITEMS] = {
-    "RAW SIGNAL FEATURES",
-    "NEC DECODE",
+    "RAW MONITOR",
+    "NEC MONITOR",
+    "PLAYBACK",
+    "STORAGE MGR",
 };
 
 static btn_t s_btn_up =   { CONFIG_IR_MONITOR_BTN_UP_GPIO,   false, false };
@@ -38,6 +46,21 @@ static screen_t s_screen = SCR_MENU;
 static int s_menu_sel = 0;
 static bool s_paused = false;
 static ir_frame_t s_disp;
+
+/* Save state */
+static bool s_just_saved = false;
+static uint32_t s_save_msg_time = 0;
+
+/* Playback list state */
+static int s_playback_sel = 0;
+static uint32_t s_playback_count = 0;
+static ir_recording_info_t s_playback_list[IR_MAX_RECORDINGS];  /* Store all recordings info */
+static bool s_playback_playing = false;
+static uint32_t s_playback_repeat = 0;
+
+/* Storage manager state */
+static int s_storage_sel = 0;
+static int s_delete_sel = 0;
 
 static void buttons_init(void)
 {
@@ -86,18 +109,18 @@ static const char *raw_hint(void)
     return "UNKNOWN";
 }
 
-static void draw_mode_header(const char *mode)
+static void load_playback_list(void)
 {
-    char line[40];
-    snprintf(line, sizeof(line), "%s %s #%04lu",
-             mode, s_paused ? "PAUSE" : "LIVE ", (unsigned long)s_disp.seq);
-    oled_draw_text(0, 0, line, false);
+    s_playback_count = ir_get_saved_recording_count();
+    for (int i = 0; i < (int)s_playback_count && i < IR_MAX_RECORDINGS; i++) {
+        ir_get_recording_info(i, &s_playback_list[i]);
+    }
 }
 
 static void draw_menu(void)
 {
     oled_clear();
-    oled_draw_text_center(0, "IR SIGNAL MONITOR", false);
+    oled_draw_text_center(0, "IR MONITOR", false);
 
     for (int i = 0; i < MENU_ITEMS; i++) {
         int y = 16 + i * 10;
@@ -115,11 +138,21 @@ static void draw_menu(void)
 static void draw_raw(void)
 {
     oled_clear();
-    draw_mode_header("RAW");
 
-    if (!s_disp.valid) {
+    /* Header */
+    char hdr[40];
+    if (s_paused) {
+        snprintf(hdr, sizeof(hdr), "RAW PAUSE");
+    } else {
+        snprintf(hdr, sizeof(hdr), "RAW LIVE #%04lu", (unsigned long)s_disp.seq);
+    }
+    oled_draw_text(0, 0, hdr, false);
+
+    /* Save message */
+    if (s_just_saved) {
+        oled_draw_text_center(24, "SAVED!", false);
+    } else if (!s_disp.valid) {
         oled_draw_text_center(24, "WAITING FOR IR...", false);
-        oled_draw_text_center(40, "POINT REMOTE AT RX", false);
     } else {
         char line[40];
         snprintf(line, sizeof(line), "EDGE %lu  DUR %lu.%02lums",
@@ -151,18 +184,33 @@ static void draw_raw(void)
         oled_draw_text(0, 40, line, false);
     }
 
-    oled_draw_text_center(56, "OK:Pause  BK:Back", false);
+    /* Footer */
+    if (s_paused) {
+        oled_draw_text_center(56, "OK:Resume UP:Save BK", false);
+    } else {
+        oled_draw_text_center(56, "OK:Pause BK:Back", false);
+    }
     oled_flush();
 }
 
 static void draw_nec(void)
 {
     oled_clear();
-    draw_mode_header("NEC");
 
-    if (!s_disp.valid) {
+    /* Header */
+    char hdr[40];
+    if (s_paused) {
+        snprintf(hdr, sizeof(hdr), "NEC PAUSE");
+    } else {
+        snprintf(hdr, sizeof(hdr), "NEC LIVE #%04lu", (unsigned long)s_disp.seq);
+    }
+    oled_draw_text(0, 0, hdr, false);
+
+    /* Save message */
+    if (s_just_saved) {
+        oled_draw_text_center(24, "SAVED!", false);
+    } else if (!s_disp.valid) {
         oled_draw_text_center(24, "WAITING FOR NEC...", false);
-        oled_draw_text_center(40, "POINT REMOTE AT RX", false);
     } else if (s_disp.nec_ok && s_disp.nec_repeat) {
         char line[40];
         snprintf(line, sizeof(line), "REPEAT CODE");
@@ -200,10 +248,189 @@ static void draw_nec(void)
                  (unsigned long)(s_disp.total_us / 1000),
                  (unsigned long)((s_disp.total_us % 1000) / 10));
         oled_draw_text(0, 16, line, false);
-        oled_draw_text(0, 24, "SEE RAW MODE", false);
     }
 
-    oled_draw_text_center(56, "OK:Pause  BK:Back", false);
+    /* Footer */
+    if (s_paused) {
+        oled_draw_text_center(56, "OK:Resume UP:Save BK", false);
+    } else {
+        oled_draw_text_center(56, "OK:Pause BK:Back", false);
+    }
+    oled_flush();
+}
+
+static void draw_playback(void)
+{
+    oled_clear();
+    oled_draw_text_center(0, "PLAYBACK", false);
+
+    s_playback_count = ir_get_saved_recording_count();
+    if (s_playback_count == 0) {
+        oled_draw_text_center(24, "NO RECORDINGS", false);
+        oled_draw_text_center(40, "RECORD FIRST", false);
+    } else {
+        char line[40];
+        snprintf(line, sizeof(line), "%lu/%lu", (unsigned long)(s_playback_sel + 1), (unsigned long)s_playback_count);
+        oled_draw_text(0, 8, line, false);
+
+        /* Calculate scroll window */
+        int total = (int)s_playback_count;
+        int sel = s_playback_sel;
+        int start = 0;
+        if (total > MAX_VISIBLE_ITEMS) {
+            /* Keep selected item in view */
+            start = sel - MAX_VISIBLE_ITEMS + 1;
+            if (start < 0) start = 0;
+            if (start > total - MAX_VISIBLE_ITEMS) start = total - MAX_VISIBLE_ITEMS;
+        }
+        int visible = total - start;
+        if (visible > MAX_VISIBLE_ITEMS) visible = MAX_VISIBLE_ITEMS;
+
+        /* Show recordings */
+        for (int i = 0; i < visible; i++) {
+            int idx = start + i;
+            int y = 18 + i * 8;
+            bool is_sel = (idx == sel);
+
+            if (is_sel) {
+                oled_fill_rect(0, y, OLED_W - 1 - 6, y + FONT5X7_CH_H, true);
+            }
+
+            if (idx < IR_MAX_RECORDINGS && s_playback_list[idx].valid) {
+                snprintf(line, sizeof(line), "#%02lu %s %lu.%02lums",
+                         (unsigned long)s_playback_list[idx].index,
+                         ir_protocol_str(s_playback_list[idx].protocol),
+                         (unsigned long)(s_playback_list[idx].total_duration_us / 1000),
+                         (unsigned long)((s_playback_list[idx].total_duration_us % 1000) / 10));
+                oled_draw_text(2, y, line, is_sel);
+            }
+        }
+
+        /* Draw scrollbar on right side */
+        if (total > MAX_VISIBLE_ITEMS) {
+            int bar_x = OLED_W - 4;
+            int bar_y = 18;
+            int bar_h = MAX_VISIBLE_ITEMS * 8 - 1;
+            /* Draw scrollbar background */
+            oled_fill_rect(bar_x, bar_y, bar_x + 3, bar_y + bar_h, false);
+            /* Draw scrollbar thumb */
+            int thumb_h = (bar_h * visible) / total;
+            if (thumb_h < 4) thumb_h = 4;
+            int thumb_y = bar_y + (bar_h - thumb_h) * start / (total - visible);
+            oled_fill_rect(bar_x, thumb_y, bar_x + 3, thumb_y + thumb_h, true);
+        }
+    }
+
+    if (s_playback_playing) {
+        oled_draw_text_center(56, "PLAYING...", false);
+    } else {
+        oled_draw_text_center(56, "OK:Play x3  BK:Back", false);
+    }
+    oled_flush();
+}
+
+static void draw_storage(void)
+{
+    oled_clear();
+    oled_draw_text_center(0, "STORAGE MANAGER", false);
+
+    uint32_t total = 0, used = 0;
+    ir_get_storage_info(&total, &used);
+
+    char line[40];
+    snprintf(line, sizeof(line), "USED: %luKB", (unsigned long)(used / 1024));
+    oled_draw_text(0, 12, line, false);
+    snprintf(line, sizeof(line), "FREE: %luKB", (unsigned long)((total - used) / 1024));
+    oled_draw_text(0, 20, line, false);
+    snprintf(line, sizeof(line), "RECORDS: %lu", (unsigned long)ir_get_saved_recording_count());
+    oled_draw_text(0, 28, line, false);
+
+    /* Menu items */
+    static const char *items[] = {"DELETE ALL", "DELETE ONE"};
+    for (int i = 0; i < 2; i++) {
+        int y = 40 + i * 8;
+        bool sel = (i == s_storage_sel);
+        if (sel) {
+            oled_fill_rect(0, y, OLED_W - 1, y + FONT5X7_CH_H, true);
+        }
+        oled_draw_text(6, y, items[i], sel);
+    }
+
+    oled_draw_text_center(56, "OK:Select BK:Back", false);
+    oled_flush();
+}
+
+static void draw_delete_confirm(void)
+{
+    oled_clear();
+    oled_draw_text_center(0, "DELETE ALL?", false);
+    oled_draw_text_center(20, "THIS CANNOT BE", false);
+    oled_draw_text_center(28, "UNDONE!", false);
+    oled_draw_text_center(44, "OK:Confirm BK:Cancel", false);
+    oled_flush();
+}
+
+static void draw_delete_select(void)
+{
+    oled_clear();
+    oled_draw_text_center(0, "SELECT TO DELETE", false);
+
+    s_playback_count = ir_get_saved_recording_count();
+    if (s_playback_count == 0) {
+        oled_draw_text_center(24, "NO RECORDINGS", false);
+    } else {
+        char line[40];
+        snprintf(line, sizeof(line), "%lu/%lu", (unsigned long)(s_delete_sel + 1), (unsigned long)s_playback_count);
+        oled_draw_text(0, 10, line, false);
+
+        /* Calculate scroll window */
+        int total = (int)s_playback_count;
+        int sel = s_delete_sel;
+        int start = 0;
+        if (total > MAX_VISIBLE_ITEMS) {
+            start = sel - MAX_VISIBLE_ITEMS + 1;
+            if (start < 0) start = 0;
+            if (start > total - MAX_VISIBLE_ITEMS) start = total - MAX_VISIBLE_ITEMS;
+        }
+        int visible = total - start;
+        if (visible > MAX_VISIBLE_ITEMS) visible = MAX_VISIBLE_ITEMS;
+
+        /* Show recordings */
+        for (int i = 0; i < visible; i++) {
+            int idx = start + i;
+            int y = 18 + i * 8;
+            bool is_sel = (idx == sel);
+
+            if (is_sel) {
+                oled_fill_rect(0, y, OLED_W - 1 - 6, y + FONT5X7_CH_H, true);
+            }
+
+            if (idx < IR_MAX_RECORDINGS && s_playback_list[idx].valid) {
+                snprintf(line, sizeof(line), "#%02lu %s %lu.%02lums",
+                         (unsigned long)s_playback_list[idx].index,
+                         ir_protocol_str(s_playback_list[idx].protocol),
+                         (unsigned long)(s_playback_list[idx].total_duration_us / 1000),
+                         (unsigned long)((s_playback_list[idx].total_duration_us % 1000) / 10));
+                oled_draw_text(2, y, line, is_sel);
+            }
+        }
+
+        /* Draw scrollbar on right side */
+        if (total > MAX_VISIBLE_ITEMS) {
+            int bar_x = OLED_W - 4;
+            int bar_y = 18;
+            int bar_h = MAX_VISIBLE_ITEMS * 8 - 1;
+            /* Draw scrollbar background */
+            oled_fill_rect(bar_x, bar_y, bar_x + 3, bar_y + bar_h, false);
+            /* Draw scrollbar thumb */
+            int thumb_h = (bar_h * visible) / total;
+            if (thumb_h < 4) thumb_h = 4;
+            int thumb_y = bar_y + (bar_h - thumb_h) * start / (total - visible);
+            oled_fill_rect(bar_x, thumb_y, bar_x + 3, thumb_y + thumb_h, true);
+        }
+    }
+
+    oled_draw_text_center(56, "OK:Delete BK:Back", false);
     oled_flush();
 }
 
@@ -219,35 +446,160 @@ static void draw_screen(void)
     case SCR_NEC:
         draw_nec();
         break;
+    case SCR_PLAYBACK:
+        draw_playback();
+        break;
+    case SCR_STORAGE:
+        draw_storage();
+        break;
+    case SCR_DELETE_CONFIRM:
+        draw_delete_confirm();
+        break;
+    case SCR_DELETE_SELECT:
+        draw_delete_select();
+        break;
     }
 }
 
 static void handle_buttons(void)
 {
     bool redraw = false;
+    uint32_t now = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+
+    /* Clear save message after 1 second */
+    if (s_just_saved && (now - s_save_msg_time > 1000)) {
+        s_just_saved = false;
+        redraw = true;
+    }
+
+    /* Handle playback completion */
+    if (s_playback_playing && !ir_is_playing()) {
+        s_playback_repeat++;
+        if (s_playback_repeat < PLAYBACK_REPEAT_COUNT) {
+            /* Repeat playback */
+            ir_playback_start(s_playback_list[s_playback_sel].index);
+        } else {
+            s_playback_playing = false;
+            redraw = true;
+        }
+    }
 
     if (btn_pressed(&s_btn_up)) {
         if (s_screen == SCR_MENU) {
             s_menu_sel = (s_menu_sel + MENU_ITEMS - 1) % MENU_ITEMS;
             redraw = true;
+        } else if ((s_screen == SCR_RAW || s_screen == SCR_NEC) && s_paused) {
+            /* Save last received frame when paused */
+            if (ir_save_last_frame() == ESP_OK) {
+                s_just_saved = true;
+                s_save_msg_time = now;
+            }
+            redraw = true;
+        } else if (s_screen == SCR_PLAYBACK && !s_playback_playing) {
+            if (s_playback_sel > 0) {
+                s_playback_sel--;
+                redraw = true;
+            }
+        } else if (s_screen == SCR_STORAGE) {
+            s_storage_sel = (s_storage_sel + 1) % 2;
+            redraw = true;
+        } else if (s_screen == SCR_DELETE_SELECT) {
+            if (s_delete_sel > 0) {
+                s_delete_sel--;
+                redraw = true;
+            }
         }
     }
     if (btn_pressed(&s_btn_down)) {
         if (s_screen == SCR_MENU) {
             s_menu_sel = (s_menu_sel + 1) % MENU_ITEMS;
             redraw = true;
+        } else if (s_screen == SCR_PLAYBACK && !s_playback_playing) {
+            if (s_playback_sel < (int)s_playback_count - 1) {
+                s_playback_sel++;
+                redraw = true;
+            }
+        } else if (s_screen == SCR_STORAGE) {
+            s_storage_sel = (s_storage_sel + 1) % 2;
+            redraw = true;
+        } else if (s_screen == SCR_DELETE_SELECT) {
+            if (s_delete_sel < (int)s_playback_count - 1) {
+                s_delete_sel++;
+                redraw = true;
+            }
         }
     }
     if (btn_pressed(&s_btn_ok)) {
         if (s_screen == SCR_MENU) {
-            s_screen = (s_menu_sel == 0) ? SCR_RAW : SCR_NEC;
-            s_paused = false;
-        } else {
+            switch (s_menu_sel) {
+                case 0:
+                    s_screen = SCR_RAW;
+                    s_paused = false;
+                    break;
+                case 1:
+                    s_screen = SCR_NEC;
+                    s_paused = false;
+                    break;
+                case 2:
+                    s_screen = SCR_PLAYBACK;
+                    s_playback_sel = 0;
+                    load_playback_list();
+                    break;
+                case 3:
+                    s_screen = SCR_STORAGE;
+                    s_storage_sel = 0;
+                    break;
+            }
+            redraw = true;
+        } else if (s_screen == SCR_RAW || s_screen == SCR_NEC) {
+            /* Toggle pause/resume */
             s_paused = !s_paused;
+            if (s_paused) {
+                ir_freeze_last_frame();
+            }
+            redraw = true;
+        } else if (s_screen == SCR_PLAYBACK) {
+            if (!s_playback_playing && s_playback_count > 0 && s_playback_list[s_playback_sel].valid) {
+                /* Start playback x3 */
+                s_playback_playing = true;
+                s_playback_repeat = 0;
+                ir_playback_start(s_playback_list[s_playback_sel].index);
+                redraw = true;
+            }
+        } else if (s_screen == SCR_STORAGE) {
+            if (s_storage_sel == 0) {
+                /* Delete all - show confirm */
+                s_screen = SCR_DELETE_CONFIRM;
+            } else {
+                /* Delete one - show select */
+                s_screen = SCR_DELETE_SELECT;
+                s_delete_sel = 0;
+                load_playback_list();
+            }
+            redraw = true;
+        } else if (s_screen == SCR_DELETE_CONFIRM) {
+            /* Confirm delete all */
+            ir_delete_all_recordings();
+            s_screen = SCR_STORAGE;
+            redraw = true;
+        } else if (s_screen == SCR_DELETE_SELECT) {
+            if (s_playback_count > 0 && s_playback_list[s_delete_sel].valid) {
+                ir_delete_recording(s_playback_list[s_delete_sel].index);
+                load_playback_list();
+                if (s_delete_sel >= (int)s_playback_count && s_delete_sel > 0) {
+                    s_delete_sel--;
+                }
+            }
+            redraw = true;
         }
-        redraw = true;
     }
     if (btn_pressed(&s_btn_back)) {
+        if (s_screen == SCR_PLAYBACK) {
+            if (s_playback_playing) {
+                ir_playback_stop();
+                s_playback_playing = false;
+            }
+        }
         if (s_screen != SCR_MENU) {
             s_screen = SCR_MENU;
             s_paused = false;
@@ -267,15 +619,16 @@ static void ui_task(void *arg)
 
     for (;;) {
         handle_buttons();
-        if (!s_paused) {
+
+        /* Update IR display */
+        if ((s_screen == SCR_RAW || s_screen == SCR_NEC) && !s_paused) {
             ir_frame_t f;
             if (ir_get_frame(&f)) {
                 s_disp = f;
-                if (s_screen == SCR_RAW || s_screen == SCR_NEC) {
-                    draw_screen();
-                }
+                draw_screen();
             }
         }
+
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }

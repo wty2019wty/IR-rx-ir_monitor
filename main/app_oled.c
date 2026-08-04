@@ -4,6 +4,8 @@
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "esp_check.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #define TAG "oled"
 
@@ -78,23 +80,29 @@ esp_err_t oled_init(void)
     uint8_t c;
 
     c = 0xAE;            oled_write_cmd(&c, 1); /* display off */
+    vTaskDelay(pdMS_TO_TICKS(10));
     seq[0] = 0xD5; seq[1] = 0x80; oled_write_cmd(seq, 2); /* clock divide */
     seq[0] = 0xA8; seq[1] = 0x3F; oled_write_cmd(seq, 2); /* multiplex 1/64 */
     seq[0] = 0xD3; seq[1] = 0x00; oled_write_cmd(seq, 2); /* display offset 0 */
     c = 0x40;          oled_write_cmd(&c, 1); /* start line 0 */
     seq[0] = 0x8D; seq[1] = 0x14; oled_write_cmd(seq, 2); /* charge pump on */
+    vTaskDelay(pdMS_TO_TICKS(10));
     seq[0] = 0x20; seq[1] = 0x00; oled_write_cmd(seq, 2); /* horizontal addressing */
     c = 0xA1;          oled_write_cmd(&c, 1); /* segment remap 0 (normal) */
     c = 0xC8;          oled_write_cmd(&c, 1); /* COM scan remapped */
     seq[0] = 0xDA; seq[1] = 0x12; oled_write_cmd(seq, 2); /* COM pins hardware */
-    seq[0] = 0x81; seq[1] = 0x7F; oled_write_cmd(seq, 2); /* contrast */
-    seq[0] = 0xD9; seq[1] = 0x22; oled_write_cmd(seq, 2); /* pre-charge period */
+    seq[0] = 0x81; seq[1] = 0xCF; oled_write_cmd(seq, 2); /* contrast (higher) */
+    seq[0] = 0xD9; seq[1] = 0xF1; oled_write_cmd(seq, 2); /* pre-charge period */
     seq[0] = 0xDB; seq[1] = 0x40; oled_write_cmd(seq, 2); /* VCOMH deselect */
     c = 0xA4;          oled_write_cmd(&c, 1); /* display from RAM */
     c = 0xA6;          oled_write_cmd(&c, 1); /* normal (not inverted) */
     c = 0xAF;          oled_write_cmd(&c, 1); /* display on */
+    vTaskDelay(pdMS_TO_TICKS(50));
 
-    memset(s_fb, 0, sizeof(s_fb));
+    memset(s_fb, 0xFF, sizeof(s_fb)); /* Fill white for test */
+    oled_flush();
+    vTaskDelay(pdMS_TO_TICKS(500));
+    memset(s_fb, 0, sizeof(s_fb)); /* Clear */
     oled_flush();
     return ESP_OK;
 }

@@ -4,6 +4,10 @@ menu "IR Monitor Configuration"
         int "IR receiver GPIO (VS1838B OUT)"
         default 4
 
+    config IR_MONITOR_IR_TX_GPIO
+        int "IR transmitter GPIO (with carrier modulator)"
+        default 5
+
     config IR_MONITOR_OLED_SDA_GPIO
         int "OLED I2C SDA GPIO"
         default 8
@@ -35,5 +39,21 @@ menu "IR Monitor Configuration"
     config IR_MONITOR_BTN_BACK_GPIO
         int "Button BACK GPIO"
         default 2
+
+    config IR_MONITOR_CARRIER_FREQ_HZ
+        int "IR carrier frequency (Hz)"
+        default 38000
+        help
+            Carrier frequency for IR transmission. Common values:
+            - 38000 (38kHz) for most consumer electronics
+            - 36000 for some older protocols
+            - 40000 for some specific devices
+
+    config IR_MONITOR_CARRIER_DUTY
+        int "IR carrier duty cycle (percent)"
+        default 33
+        help
+            Duty cycle of the carrier signal in percent.
+            Typical values: 25-50% (33% is common for 38kHz)
 
 endmenu

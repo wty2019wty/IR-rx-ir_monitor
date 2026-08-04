@@ -598,13 +598,31 @@ esp_err_t ir_delete_recording(uint32_t index)
     }
 
     esp_err_t ret = ir_delete_recording_file(index);
-    if (ret == ESP_OK) {
-        if (s_saved_recording_count > 0) {
-            s_saved_recording_count--;
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    /* Shift all recordings after this index down by one to fill the gap */
+    for (uint32_t i = index; i + 1 < IR_MAX_RECORDINGS; i++) {
+        char src[64], dst[64];
+        snprintf(src, sizeof(src), "%s/ir_%03lu.bin", IR_RECORDING_DIR, (unsigned long)(i + 1));
+        snprintf(dst, sizeof(dst), "%s/ir_%03lu.bin", IR_RECORDING_DIR, (unsigned long)i);
+
+        struct stat st;
+        if (stat(src, &st) != 0) {
+            break;  /* No more files to shift */
+        }
+        if (rename(src, dst) != 0) {
+            ESP_LOGE(TAG, "Failed to rename %s -> %s", src, dst);
+            break;
         }
     }
 
-    return ret;
+    if (s_saved_recording_count > 0) {
+        s_saved_recording_count--;
+    }
+
+    return ESP_OK;
 }
 
 esp_err_t ir_delete_all_recordings(void)

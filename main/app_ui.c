@@ -62,6 +62,10 @@ static uint32_t s_playback_repeat = 0;
 static int s_storage_sel = 0;
 static int s_delete_sel = 0;
 
+/* Scroll position for list pages */
+static int s_pb_start = 0;
+static int s_del_start = 0;
+
 static void buttons_init(void)
 {
     gpio_config_t cfg = {
@@ -273,16 +277,19 @@ static void draw_playback(void)
         snprintf(line, sizeof(line), "%lu/%lu", (unsigned long)(s_playback_sel + 1), (unsigned long)s_playback_count);
         oled_draw_text(0, 8, line, false);
 
-        /* Calculate scroll window */
+        /* Calculate scroll window - selection moves first, then page scrolls */
         int total = (int)s_playback_count;
         int sel = s_playback_sel;
-        int start = 0;
         if (total > MAX_VISIBLE_ITEMS) {
-            /* Keep selected item in view */
-            start = sel - MAX_VISIBLE_ITEMS + 1;
-            if (start < 0) start = 0;
-            if (start > total - MAX_VISIBLE_ITEMS) start = total - MAX_VISIBLE_ITEMS;
+            /* Clamp start so sel is visible */
+            if (sel < s_pb_start) s_pb_start = sel;
+            if (sel >= s_pb_start + MAX_VISIBLE_ITEMS) s_pb_start = sel - MAX_VISIBLE_ITEMS + 1;
+            if (s_pb_start < 0) s_pb_start = 0;
+            if (s_pb_start > total - MAX_VISIBLE_ITEMS) s_pb_start = total - MAX_VISIBLE_ITEMS;
+        } else {
+            s_pb_start = 0;
         }
+        int start = s_pb_start;
         int visible = total - start;
         if (visible > MAX_VISIBLE_ITEMS) visible = MAX_VISIBLE_ITEMS;
 
@@ -384,15 +391,19 @@ static void draw_delete_select(void)
         snprintf(line, sizeof(line), "%lu/%lu", (unsigned long)(s_delete_sel + 1), (unsigned long)s_playback_count);
         oled_draw_text(0, 10, line, false);
 
-        /* Calculate scroll window */
+        /* Calculate scroll window - selection moves first, then page scrolls */
         int total = (int)s_playback_count;
         int sel = s_delete_sel;
-        int start = 0;
         if (total > MAX_VISIBLE_ITEMS) {
-            start = sel - MAX_VISIBLE_ITEMS + 1;
-            if (start < 0) start = 0;
-            if (start > total - MAX_VISIBLE_ITEMS) start = total - MAX_VISIBLE_ITEMS;
+            /* Clamp start so sel is visible */
+            if (sel < s_del_start) s_del_start = sel;
+            if (sel >= s_del_start + MAX_VISIBLE_ITEMS) s_del_start = sel - MAX_VISIBLE_ITEMS + 1;
+            if (s_del_start < 0) s_del_start = 0;
+            if (s_del_start > total - MAX_VISIBLE_ITEMS) s_del_start = total - MAX_VISIBLE_ITEMS;
+        } else {
+            s_del_start = 0;
         }
+        int start = s_del_start;
         int visible = total - start;
         if (visible > MAX_VISIBLE_ITEMS) visible = MAX_VISIBLE_ITEMS;
 
@@ -500,38 +511,30 @@ static void handle_buttons(void)
                 s_save_msg_time = now;
             }
             redraw = true;
-        } else if (s_screen == SCR_PLAYBACK && !s_playback_playing) {
-            if (s_playback_sel > 0) {
-                s_playback_sel--;
-                redraw = true;
-            }
+        } else if (s_screen == SCR_PLAYBACK && !s_playback_playing && s_playback_count > 0) {
+            s_playback_sel = (s_playback_sel + s_playback_count - 1) % s_playback_count;
+            redraw = true;
         } else if (s_screen == SCR_STORAGE) {
             s_storage_sel = (s_storage_sel + 1) % 2;
             redraw = true;
-        } else if (s_screen == SCR_DELETE_SELECT) {
-            if (s_delete_sel > 0) {
-                s_delete_sel--;
-                redraw = true;
-            }
+        } else if (s_screen == SCR_DELETE_SELECT && s_playback_count > 0) {
+            s_delete_sel = (s_delete_sel + s_playback_count - 1) % s_playback_count;
+            redraw = true;
         }
     }
     if (btn_pressed(&s_btn_down)) {
         if (s_screen == SCR_MENU) {
             s_menu_sel = (s_menu_sel + 1) % MENU_ITEMS;
             redraw = true;
-        } else if (s_screen == SCR_PLAYBACK && !s_playback_playing) {
-            if (s_playback_sel < (int)s_playback_count - 1) {
-                s_playback_sel++;
-                redraw = true;
-            }
+        } else if (s_screen == SCR_PLAYBACK && !s_playback_playing && s_playback_count > 0) {
+            s_playback_sel = (s_playback_sel + 1) % s_playback_count;
+            redraw = true;
         } else if (s_screen == SCR_STORAGE) {
             s_storage_sel = (s_storage_sel + 1) % 2;
             redraw = true;
-        } else if (s_screen == SCR_DELETE_SELECT) {
-            if (s_delete_sel < (int)s_playback_count - 1) {
-                s_delete_sel++;
-                redraw = true;
-            }
+        } else if (s_screen == SCR_DELETE_SELECT && s_playback_count > 0) {
+            s_delete_sel = (s_delete_sel + 1) % s_playback_count;
+            redraw = true;
         }
     }
     if (btn_pressed(&s_btn_ok)) {
@@ -548,6 +551,7 @@ static void handle_buttons(void)
                 case 2:
                     s_screen = SCR_PLAYBACK;
                     s_playback_sel = 0;
+                    s_pb_start = 0;
                     load_playback_list();
                     break;
                 case 3:
@@ -579,6 +583,7 @@ static void handle_buttons(void)
                 /* Delete one - show select */
                 s_screen = SCR_DELETE_SELECT;
                 s_delete_sel = 0;
+                s_del_start = 0;
                 load_playback_list();
             }
             redraw = true;

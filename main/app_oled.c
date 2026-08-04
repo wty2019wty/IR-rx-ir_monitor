@@ -25,7 +25,7 @@ static esp_err_t oled_detect_addr(i2c_master_bus_handle_t bus, uint16_t *out_add
         (uint16_t)(OLED_I2C_ADDR ^ 0x01),
     };
     for (int i = 0; i < 2; i++) {
-        esp_err_t err = i2c_master_probe(bus, candidates[i], 200);
+        esp_err_t err = i2c_master_probe(bus, candidates[i], pdMS_TO_TICKS(200));
         if (err == ESP_OK) {
             *out_addr = candidates[i];
             ESP_LOGI(TAG, "OLED detected at 0x%02X", candidates[i]);
@@ -45,7 +45,7 @@ static esp_err_t oled_write_cmd(const uint8_t *cmds, size_t len)
     }
     pkt[0] = 0x00; /* control byte: command stream */
     memcpy(pkt + 1, cmds, len);
-    return i2c_master_transmit(s_oled_dev, pkt, len + 1, 50);
+    return i2c_master_transmit(s_oled_dev, pkt, len + 1, pdMS_TO_TICKS(100));
 }
 
 esp_err_t oled_init(void)
@@ -70,7 +70,7 @@ esp_err_t oled_init(void)
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = oled_addr,
         .scl_speed_hz = OLED_I2C_CLK_HZ,
-        .scl_wait_us = 0,
+        .scl_wait_us = 50,  /* give slave time to clock-stretch */
         .flags.disable_ack_check = false,
     };
     ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(bus, &dev_cfg, &s_oled_dev), TAG, "add OLED device");
@@ -124,7 +124,7 @@ void oled_flush(void)
         uint8_t pkt[129];
         pkt[0] = 0x40; /* control byte: data stream */
         memcpy(pkt + 1, s_fb + i, 128);
-        i2c_master_transmit(s_oled_dev, pkt, sizeof(pkt), 50);
+        i2c_master_transmit(s_oled_dev, pkt, sizeof(pkt), pdMS_TO_TICKS(100));
     }
 }
 

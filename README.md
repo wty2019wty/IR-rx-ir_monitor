@@ -6,8 +6,8 @@
 
 ## 功能概述
 
-1. **RAW MONITOR** — 原始信号监视+录制（暂停时自动开始录制，按上键保存）
-2. **NEC MONITOR** — NEC解码监视+录制（暂停时自动开始录制，按上键保存）
+1. **RAW MONITOR** — 原始信号监视+录制（暂停后按上键保存最后一帧）
+2. **NEC MONITOR** — NEC解码监视+录制（暂停后按上键保存最后一帧）
 3. **PLAYBACK** — 回放列表，按OK连续回放3次
 4. **STORAGE MGR** — 存储管理（查看空间、删除全部/单个）
 
@@ -18,7 +18,7 @@
 | IR 接收 | GPIO4 | VS1838B OUT（解调后基带信号，空闲为高电平） |
 | IR 发射 | GPIO5 | 可选载波，需外接三极管驱动红外发光二极管 |
 | OLED SDA | GPIO8 | I2C 数据（SSD1315，默认地址 0x3C） |
-| OLED SCL | GPIO9 | I2C 时钟（400kHz） |
+| OLED SCL | GPIO9 | I2C 时钟（100kHz，可在 menuconfig 中调整） |
 | 按键-上 | GPIO39 | 菜单上移 |
 | 按键-下 | GPIO38 | 菜单下移 |
 | 按键-确定 | GPIO1 | 确认 / 进入 / 暂停切换 |
@@ -71,10 +71,9 @@ IR-rx-ir_monitor/
 ├── CMakeLists.txt
 ├── sdkconfig.defaults        # esp32s3 / 16MB flash / 8MB 八线 PSRAM
 ├── partitions.csv            # 自定义分区表（含 LittleFS 存储分区）
-├── components/
-│   └── esp_littlefs/         # LittleFS 文件系统组件（第三方）
 ├── main/
 │   ├── CMakeLists.txt
+│   ├── idf_component.yml     # 声明 joltwallet/littlefs 依赖（组件管理器自动拉取）
 │   ├── Kconfig.projbuild     # 引脚、OLED 地址、载波频率等可配置项
 │   ├── app_main.c
 │   ├── app_ir.c              # RMT 采集 + 原始特征分析 + NEC 解码 + 录制回放
@@ -86,6 +85,8 @@ IR-rx-ir_monitor/
 │       ├── app_oled.h
 │       ├── app_ui.h
 │       └── font5x7.h
+├── managed_components/
+│   └── joltwallet__littlefs/ # LittleFS 组件（由组件管理器自动下载，无需手动拷贝）
 ```
 
 ## 编译与烧录
@@ -99,8 +100,8 @@ idf.py build
 idf.py -p COMx flash monitor
 ```
 
-> **首次烧录前**：需将 `esp_littlefs` 组件放入 `components/` 目录（见工程结构）。
-> 首次烧录时 LittleFS 分区会自动格式化。
+> **首次烧录**：`joltwallet/littlefs` 组件由 IDF 组件管理器根据
+> `main/idf_component.yml` 自动下载，无需手动拷贝；首次烧录时 LittleFS 分区会自动格式化。
 
 如需修改引脚或 OLED 参数：
 
@@ -119,14 +120,16 @@ idf.py menuconfig
 - NEC 解码采用"扫描 9ms 引导码"的方式，不依赖信号极性，容错范围较官方示例更宽，
   支持 8 位/16 位地址 NEC 与重复码。
 - 原始模式中"引导脉冲/间隔"为第一、二段电平宽度；最小/最大脉冲不含 9ms 引导码。
-- OLED 驱动为纯软件帧缓冲（1KB），整屏刷新约 20ms（400kHz I2C）。
+- OLED 驱动为纯软件帧缓冲（1KB），100kHz I2C 下整屏刷新约 100ms
+  （可通过 menuconfig 调高 I2C 时钟以加快刷新）。
 - I2C 使用同步模式并在启动时自动探测 OLED 地址（先 0x3C 后 0x3D），
   若探测失败会在串口日志中明确提示，便于排查接线/供电/地址问题。
 - 界面文本为 ASCII（128x64 无法容纳中文 5x7 字号）。
 - 录制功能使用 LittleFS 文件系统存储，支持掉电安全，比 SPIFFS 挂载更快。
   每个录制保存为独立的二进制文件（`ir_xxx.bin`）。
 - 录制文件格式：文件头（64字节）+ RMT 符号数据（每个符号4字节）。
-- 支持最多 50 个录制，每个录制最多 256 个 RMT 符号。
+- 支持最多 50 个录制；接收缓冲为 256 个 symbol（单帧上限），
+  播放加载上限为 2048 个 symbol。
 - 回放功能通过独立的 FreeRTOS 任务执行，支持连续回放3次。
 - 使用自定义分区表，为 LittleFS 分配约 14MB 存储空间（可存储大量录制）。
 - RMT ISR 使用简单标志变量代替 FreeRTOS 队列，避免 DMA 中断兼容性问题。

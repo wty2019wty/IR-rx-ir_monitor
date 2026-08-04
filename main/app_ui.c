@@ -316,7 +316,8 @@ static void draw_playback(void)
             /* Draw scrollbar thumb */
             int thumb_h = (bar_h * visible) / total;
             if (thumb_h < 4) thumb_h = 4;
-            int thumb_y = bar_y + (bar_h - thumb_h) * start / (total - visible);
+            int scroll_range = total - visible;
+            int thumb_y = (scroll_range > 0) ? bar_y + (bar_h - thumb_h) * start / scroll_range : bar_y;
             oled_fill_rect(bar_x, thumb_y, bar_x + 3, thumb_y + thumb_h, true);
         }
     }
@@ -425,7 +426,8 @@ static void draw_delete_select(void)
             /* Draw scrollbar thumb */
             int thumb_h = (bar_h * visible) / total;
             if (thumb_h < 4) thumb_h = 4;
-            int thumb_y = bar_y + (bar_h - thumb_h) * start / (total - visible);
+            int scroll_range = total - visible;
+            int thumb_y = (scroll_range > 0) ? bar_y + (bar_h - thumb_h) * start / scroll_range : bar_y;
             oled_fill_rect(bar_x, thumb_y, bar_x + 3, thumb_y + thumb_h, true);
         }
     }
@@ -476,12 +478,15 @@ static void handle_buttons(void)
     if (s_playback_playing && !ir_is_playing()) {
         s_playback_repeat++;
         if (s_playback_repeat < PLAYBACK_REPEAT_COUNT) {
-            /* Repeat playback */
-            ir_playback_start(s_playback_list[s_playback_sel].index);
+            /* Repeat playback, stop on failure */
+            if (ir_playback_start(s_playback_list[s_playback_sel].index) != ESP_OK) {
+                ESP_LOGE("ui", "Playback repeat failed");
+                s_playback_playing = false;
+            }
         } else {
             s_playback_playing = false;
-            redraw = true;
         }
+        redraw = true;
     }
 
     if (btn_pressed(&s_btn_up)) {

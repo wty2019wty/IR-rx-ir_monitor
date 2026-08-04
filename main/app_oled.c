@@ -78,25 +78,26 @@ esp_err_t oled_init(void)
     /* SSD1306/SSD1315 init, 128x64, I2C */
     uint8_t seq[2];
     uint8_t c;
+    esp_err_t ret;
 
-    c = 0xAE;            oled_write_cmd(&c, 1); /* display off */
+    c = 0xAE;            ESP_GOTO_ON_ERROR(oled_write_cmd(&c, 1), err, TAG, "display off");
     vTaskDelay(pdMS_TO_TICKS(10));
-    seq[0] = 0xD5; seq[1] = 0x80; oled_write_cmd(seq, 2); /* clock divide */
-    seq[0] = 0xA8; seq[1] = 0x3F; oled_write_cmd(seq, 2); /* multiplex 1/64 */
-    seq[0] = 0xD3; seq[1] = 0x00; oled_write_cmd(seq, 2); /* display offset 0 */
-    c = 0x40;          oled_write_cmd(&c, 1); /* start line 0 */
-    seq[0] = 0x8D; seq[1] = 0x14; oled_write_cmd(seq, 2); /* charge pump on */
+    seq[0] = 0xD5; seq[1] = 0x80; ESP_GOTO_ON_ERROR(oled_write_cmd(seq, 2), err, TAG, "clock divide");
+    seq[0] = 0xA8; seq[1] = 0x3F; ESP_GOTO_ON_ERROR(oled_write_cmd(seq, 2), err, TAG, "multiplex");
+    seq[0] = 0xD3; seq[1] = 0x00; ESP_GOTO_ON_ERROR(oled_write_cmd(seq, 2), err, TAG, "display offset");
+    c = 0x40;          ESP_GOTO_ON_ERROR(oled_write_cmd(&c, 1), err, TAG, "start line");
+    seq[0] = 0x8D; seq[1] = 0x14; ESP_GOTO_ON_ERROR(oled_write_cmd(seq, 2), err, TAG, "charge pump");
     vTaskDelay(pdMS_TO_TICKS(10));
-    seq[0] = 0x20; seq[1] = 0x00; oled_write_cmd(seq, 2); /* horizontal addressing */
-    c = 0xA1;          oled_write_cmd(&c, 1); /* segment remap 0 (normal) */
-    c = 0xC8;          oled_write_cmd(&c, 1); /* COM scan remapped */
-    seq[0] = 0xDA; seq[1] = 0x12; oled_write_cmd(seq, 2); /* COM pins hardware */
-    seq[0] = 0x81; seq[1] = 0xCF; oled_write_cmd(seq, 2); /* contrast (higher) */
-    seq[0] = 0xD9; seq[1] = 0xF1; oled_write_cmd(seq, 2); /* pre-charge period */
-    seq[0] = 0xDB; seq[1] = 0x40; oled_write_cmd(seq, 2); /* VCOMH deselect */
-    c = 0xA4;          oled_write_cmd(&c, 1); /* display from RAM */
-    c = 0xA6;          oled_write_cmd(&c, 1); /* normal (not inverted) */
-    c = 0xAF;          oled_write_cmd(&c, 1); /* display on */
+    seq[0] = 0x20; seq[1] = 0x00; ESP_GOTO_ON_ERROR(oled_write_cmd(seq, 2), err, TAG, "addressing mode");
+    c = 0xA1;          ESP_GOTO_ON_ERROR(oled_write_cmd(&c, 1), err, TAG, "segment remap");
+    c = 0xC8;          ESP_GOTO_ON_ERROR(oled_write_cmd(&c, 1), err, TAG, "COM scan");
+    seq[0] = 0xDA; seq[1] = 0x12; ESP_GOTO_ON_ERROR(oled_write_cmd(seq, 2), err, TAG, "COM pins");
+    seq[0] = 0x81; seq[1] = 0xCF; ESP_GOTO_ON_ERROR(oled_write_cmd(seq, 2), err, TAG, "contrast");
+    seq[0] = 0xD9; seq[1] = 0xF1; ESP_GOTO_ON_ERROR(oled_write_cmd(seq, 2), err, TAG, "pre-charge");
+    seq[0] = 0xDB; seq[1] = 0x40; ESP_GOTO_ON_ERROR(oled_write_cmd(seq, 2), err, TAG, "VCOMH");
+    c = 0xA4;          ESP_GOTO_ON_ERROR(oled_write_cmd(&c, 1), err, TAG, "display RAM");
+    c = 0xA6;          ESP_GOTO_ON_ERROR(oled_write_cmd(&c, 1), err, TAG, "normal mode");
+    c = 0xAF;          ESP_GOTO_ON_ERROR(oled_write_cmd(&c, 1), err, TAG, "display on");
     vTaskDelay(pdMS_TO_TICKS(50));
 
     memset(s_fb, 0xFF, sizeof(s_fb)); /* Fill white for test */
@@ -105,6 +106,9 @@ esp_err_t oled_init(void)
     memset(s_fb, 0, sizeof(s_fb)); /* Clear */
     oled_flush();
     return ESP_OK;
+
+err:
+    return ret;
 }
 
 void oled_flush(void)

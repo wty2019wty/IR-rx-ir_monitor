@@ -87,7 +87,7 @@ static bool ir_rx_done_cb(rmt_channel_handle_t ch, const rmt_rx_done_event_data_
     /* Copy data directly instead of using queue */
     s_rx_data = *edata;
     s_rx_done = true;
-    return false; /* no task woken */
+    return true; /* request context switch so ir_task wakes immediately */
 }
 
 /* Helper function to get protocol string */
@@ -377,17 +377,18 @@ static void ir_analyze(const rmt_symbol_word_t *sym, size_t num, ir_frame_t *f)
 
 static void ir_task(void *arg)
 {
+    (void)arg;
     for (;;) {
-        /* Poll for RX done flag instead of using FreeRTOS queue */
+        /* Poll for RX done flag; callback returns true so we wake on event */
         if (!s_rx_done) {
             vTaskDelay(pdMS_TO_TICKS(1));
             continue;
         }
+        /* Read symbol data BEFORE clearing flag to avoid race with ISR */
+        rmt_rx_done_event_data_t ev = s_rx_data;
         s_rx_done = false;
 
         /* Process received data */
-        rmt_rx_done_event_data_t ev = s_rx_data;
-
         ir_frame_t fr;
         memset(&fr, 0, sizeof(fr));
         size_t num = ev.num_symbols;
@@ -635,9 +636,7 @@ static void ir_playback_task(void *arg)
     esp_err_t ret = ir_load_recording_from_file(index, &header, s_tx_buf, IR_MAX_SYMBOLS_PER_RECORDING);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to load recording");
-        s_playing = false;
-        vTaskDelete(NULL);
-        return;
+        goto cleanup;
     }
 
     ESP_LOGI(TAG, "Loaded recording with %lu symbols", (unsigned long)header.symbol_count);
@@ -660,9 +659,7 @@ static void ir_playback_task(void *arg)
     ret = rmt_new_copy_encoder(&copy_cfg, &copy_encoder);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create copy encoder: %s", esp_err_to_name(ret));
-        s_playing = false;
-        vTaskDelete(NULL);
-        return;
+        goto cleanup;
     }
 
     /* Transmit */
@@ -679,11 +676,10 @@ static void ir_playback_task(void *arg)
         }
     }
 
-    /* Cleanup encoder */
-    if (copy_encoder) {
-        rmt_del_encoder(copy_encoder);
-    }
+    /* Cleanup encoder (always executed on any exit path) */
+    rmt_del_encoder(copy_encoder);
 
+cleanup:
     ESP_LOGI(TAG, "Playback completed");
     s_playing = false;
     s_playback_task_handle = NULL;

@@ -1,7 +1,11 @@
 #include <string.h>
 #include "font5x7.h"
 
+/* Verify font array size matches character range */
+#define FONT5X7_CHAR_COUNT (FONT5X7_LAST_CHAR - FONT5X7_FIRST_CHAR + 1)
+
 /* Classic 5x7 font, bit 0 of each byte = top row of the column. */
+/* Array must have FONT5X7_CHAR_COUNT entries (0x20..0x7E = 95 chars) */
 static const uint8_t s_font[][FONT5X7_CH_W] = {
     /* 0x20 space */ {0x00, 0x00, 0x00, 0x00, 0x00},
     /* 0x21 !     */ {0x00, 0x00, 0x5F, 0x00, 0x00},
@@ -105,7 +109,12 @@ const uint8_t *font5x7_glyph(char c)
     if (c < FONT5X7_FIRST_CHAR || c > FONT5X7_LAST_CHAR) {
         return s_font[0]; /* space */
     }
-    return s_font[(uint8_t)c - FONT5X7_FIRST_CHAR];
+    size_t idx = (uint8_t)c - FONT5X7_FIRST_CHAR;
+    /* Runtime check to guard against corrupted font data */
+    if (idx >= FONT5X7_CHAR_COUNT) {
+        return s_font[0];
+    }
+    return s_font[idx];
 }
 
 int font5x7_text_width(const char *s)

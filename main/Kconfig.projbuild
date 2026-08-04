@@ -22,7 +22,7 @@ menu "IR Monitor Configuration"
 
     config IR_MONITOR_OLED_I2C_CLK_HZ
         int "OLED I2C clock frequency (Hz)"
-        default 400000
+        default 100000
 
     config IR_MONITOR_BTN_UP_GPIO
         int "Button UP GPIO"

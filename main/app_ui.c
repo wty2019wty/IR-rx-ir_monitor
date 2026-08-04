@@ -150,7 +150,7 @@ static void draw_raw(void)
 
     /* Save message */
     if (s_just_saved) {
-        oled_draw_text_center(24, "SAVED!", false);
+        oled_draw_text_center(24, "SAVED! OK", false);
     } else if (!s_disp.valid) {
         oled_draw_text_center(24, "WAITING FOR IR...", false);
     } else {
@@ -208,7 +208,7 @@ static void draw_nec(void)
 
     /* Save message */
     if (s_just_saved) {
-        oled_draw_text_center(24, "SAVED!", false);
+        oled_draw_text_center(24, "SAVED! OK", false);
     } else if (!s_disp.valid) {
         oled_draw_text_center(24, "WAITING FOR NEC...", false);
     } else if (s_disp.nec_ok && s_disp.nec_repeat) {
@@ -376,7 +376,7 @@ static void draw_delete_select(void)
     oled_clear();
     oled_draw_text_center(0, "SELECT TO DELETE", false);
 
-    s_playback_count = ir_get_saved_recording_count();
+    /* Use cached count from load_playback_list() for consistency */
     if (s_playback_count == 0) {
         oled_draw_text_center(24, "NO RECORDINGS", false);
     } else {
@@ -468,8 +468,8 @@ static void handle_buttons(void)
     bool redraw = false;
     uint32_t now = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
 
-    /* Clear save message after 1 second */
-    if (s_just_saved && (now - s_save_msg_time > 1000)) {
+    /* Clear save message after 2 seconds */
+    if (s_just_saved && (now - s_save_msg_time > 2000)) {
         s_just_saved = false;
         redraw = true;
     }
@@ -588,11 +588,15 @@ static void handle_buttons(void)
             s_screen = SCR_STORAGE;
             redraw = true;
         } else if (s_screen == SCR_DELETE_SELECT) {
-            if (s_playback_count > 0 && s_playback_list[s_delete_sel].valid) {
+            if (s_playback_count > 0 && s_delete_sel < (int)s_playback_count
+                && s_playback_list[s_delete_sel].valid) {
                 ir_delete_recording(s_playback_list[s_delete_sel].index);
                 load_playback_list();
-                if (s_delete_sel >= (int)s_playback_count && s_delete_sel > 0) {
-                    s_delete_sel--;
+                /* Clamp selection to valid range after list shrinks */
+                if (s_playback_count == 0) {
+                    s_delete_sel = 0;
+                } else if (s_delete_sel >= (int)s_playback_count) {
+                    s_delete_sel = (int)s_playback_count - 1;
                 }
             }
             redraw = true;
@@ -608,6 +612,7 @@ static void handle_buttons(void)
         if (s_screen != SCR_MENU) {
             s_screen = SCR_MENU;
             s_paused = false;
+            s_delete_sel = 0;  /* Reset delete selection when leaving */
         }
         redraw = true;
     }

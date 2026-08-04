@@ -30,7 +30,6 @@ void app_main(void)
     ESP_LOGI(TAG, "OLED ready");
 
     show_status("IR MONITOR", "Initializing...");
-    vTaskDelay(pdMS_TO_TICKS(500));
 
     /* Initialize IR capture (creates RMT channels but does NOT start receiving) */
     show_status("IR MONITOR", "Init RMT...");
@@ -42,24 +41,15 @@ void app_main(void)
     }
     ESP_LOGI(TAG, "IR capture ready");
 
-    /* Initialize storage BEFORE starting RMT receive to avoid flash/RMT ISR conflicts */
-    show_status("IR MONITOR", "Init Storage...");
-    err = ir_storage_init();
+    /* Initialize storage in background, then start RX after flash is ready */
+    show_status("IR MONITOR", "Loading...");
+    err = ir_storage_init_async();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "IR storage init failed: %s", esp_err_to_name(err));
         show_status("STORAGE FAILED!", esp_err_to_name(err));
         return;
     }
-    ESP_LOGI(TAG, "IR storage ready");
-
-    /* Now safe to start RMT receiving (after SPIFFS init completes) */
-    show_status("IR MONITOR", "Start RX...");
-    err = ir_start_receive();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "IR start receive failed: %s", esp_err_to_name(err));
-        show_status("RX FAILED!", esp_err_to_name(err));
-        return;
-    }
+    ESP_LOGI(TAG, "Storage init started in background");
 
     show_status("IR MONITOR", "Starting UI...");
     err = ui_init();

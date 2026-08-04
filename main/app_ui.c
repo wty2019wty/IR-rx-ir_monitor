@@ -115,6 +115,10 @@ static const char *raw_hint(void)
 
 static void load_playback_list(void)
 {
+    if (!ir_storage_is_ready()) {
+        s_playback_count = 0;
+        return;
+    }
     s_playback_count = ir_get_saved_recording_count();
     for (int i = 0; i < (int)s_playback_count && i < IR_MAX_RECORDINGS; i++) {
         ir_get_recording_info(i, &s_playback_list[i]);
@@ -268,6 +272,13 @@ static void draw_playback(void)
     oled_clear();
     oled_draw_text_center(0, "PLAYBACK", false);
 
+    if (!ir_storage_is_ready()) {
+        oled_draw_text_center(24, "LOADING...", false);
+        oled_draw_text_center(40, "PLEASE WAIT", false);
+        oled_draw_text_center(56, "BK:Back", false);
+        oled_flush();
+        return;
+    }
     s_playback_count = ir_get_saved_recording_count();
     if (s_playback_count == 0) {
         oled_draw_text_center(24, "NO RECORDINGS", false);
@@ -342,6 +353,14 @@ static void draw_storage(void)
     oled_clear();
     oled_draw_text_center(0, "STORAGE MANAGER", false);
 
+    if (!ir_storage_is_ready()) {
+        oled_draw_text_center(24, "LOADING...", false);
+        oled_draw_text_center(40, "PLEASE WAIT", false);
+        oled_draw_text_center(56, "BK:Back", false);
+        oled_flush();
+        return;
+    }
+
     uint32_t total = 0, used = 0;
     ir_get_storage_info(&total, &used);
 
@@ -382,6 +401,13 @@ static void draw_delete_select(void)
 {
     oled_clear();
     oled_draw_text_center(0, "SELECT TO DELETE", false);
+
+    if (!ir_storage_is_ready()) {
+        oled_draw_text_center(24, "LOADING...", false);
+        oled_draw_text_center(56, "BK:Back", false);
+        oled_flush();
+        return;
+    }
 
     /* Use cached count from load_playback_list() for consistency */
     if (s_playback_count == 0) {

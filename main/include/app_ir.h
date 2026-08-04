@@ -77,9 +77,20 @@ esp_err_t ir_start_receive(void);
 bool ir_get_frame(ir_frame_t *out);
 
 /**
- * Initialize the recording storage system (SPIFFS).
+ * Initialize the recording storage system (LittleFS).
  */
 esp_err_t ir_storage_init(void);
+
+/**
+ * Initialize storage in a background task, then start IR receive.
+ * Returns immediately; storage becomes ready asynchronously.
+ */
+esp_err_t ir_storage_init_async(void);
+
+/**
+ * Check if storage initialization has completed.
+ */
+bool ir_storage_is_ready(void);
 
 /**
  * Get the number of saved recordings in storage.

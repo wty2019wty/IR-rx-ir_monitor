@@ -9,7 +9,7 @@
 #include "driver/rmt_tx.h"
 #include "esp_log.h"
 #include "esp_check.h"
-#include "esp_spiffs.h"
+#include "esp_littlefs.h"
 #include "esp_timer.h"
 
 #define TAG "ir"
@@ -31,7 +31,7 @@
 #define IR_CARRIER_FREQ_HZ  CONFIG_IR_MONITOR_CARRIER_FREQ_HZ
 #define IR_CARRIER_DUTY     CONFIG_IR_MONITOR_CARRIER_DUTY
 
-#define IR_RECORDING_DIR    "/spiffs"
+#define IR_RECORDING_DIR    "/littlefs"
 #define IR_MAX_SYMBOLS_PER_RECORDING 2048
 
 typedef struct {
@@ -101,7 +101,7 @@ const char *ir_protocol_str(uint8_t protocol)
     }
 }
 
-/* Save recording to SPIFFS file */
+/* Save recording to LittleFS file */
 static esp_err_t ir_save_recording_to_file(uint32_t index, const ir_recording_header_t *header, const rmt_symbol_word_t *symbols)
 {
     char filepath[64];
@@ -134,7 +134,7 @@ static esp_err_t ir_save_recording_to_file(uint32_t index, const ir_recording_he
     return ESP_OK;
 }
 
-/* Load recording from SPIFFS file */
+/* Load recording from LittleFS file */
 static esp_err_t ir_load_recording_from_file(uint32_t index, ir_recording_header_t *header, rmt_symbol_word_t *symbols, uint32_t max_symbols)
 {
     char filepath[64];
@@ -199,7 +199,7 @@ static esp_err_t ir_delete_recording_file(uint32_t index)
     return ESP_OK;
 }
 
-/* Count saved recordings in SPIFFS */
+/* Count saved recordings in LittleFS */
 static uint32_t ir_count_saved_recordings(void)
 {
     uint32_t count = 0;
@@ -211,7 +211,7 @@ static uint32_t ir_count_saved_recordings(void)
         if (stat(filepath, &st) == 0) {
             count++;
         }
-        /* Yield every call to prevent watchdog timeout — SPIFFS stat is slow */
+        /* Yield periodically to prevent watchdog timeout */
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
@@ -517,21 +517,21 @@ bool ir_get_frame(ir_frame_t *out)
     return got;
 }
 
-/* Storage initialization */
-esp_err_t ir_storage_init(void)
+/* Storage initialization (internal, called by async task or directly) */
+static esp_err_t ir_storage_mount(void)
 {
-    ESP_LOGI(TAG, "Initializing SPIFFS storage");
+    ESP_LOGI(TAG, "Initializing LittleFS storage");
 
-    esp_vfs_spiffs_conf_t spiffs_conf = {
-        .base_path = "/spiffs",
+    esp_vfs_littlefs_conf_t lfs_conf = {
+        .base_path = IR_RECORDING_DIR,
         .partition_label = NULL,
-        .max_files = 10,
         .format_if_mount_failed = true,
+        .dont_mount = false,
     };
 
-    esp_err_t ret = esp_vfs_spiffs_register(&spiffs_conf);
+    esp_err_t ret = esp_vfs_littlefs_register(&lfs_conf);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to initialize LittleFS (%s)", esp_err_to_name(ret));
         return ret;
     }
 
@@ -541,6 +541,38 @@ esp_err_t ir_storage_init(void)
 
     s_storage_initialized = true;
     return ESP_OK;
+}
+
+esp_err_t ir_storage_init(void)
+{
+    return ir_storage_mount();
+}
+
+/* Background task: mount storage, then start IR receive */
+static void ir_storage_task(void *arg)
+{
+    esp_err_t ret = ir_storage_mount();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Storage init failed in background task");
+    } else {
+        /* Now safe to start RMT receiving (after flash init completes) */
+        ret = ir_start_receive();
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to start IR receive after storage init");
+        }
+    }
+    vTaskDelete(NULL);
+}
+
+esp_err_t ir_storage_init_async(void)
+{
+    BaseType_t ok = xTaskCreate(ir_storage_task, "ir_storage", 4096, NULL, 3, NULL);
+    return (ok == pdPASS) ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+bool ir_storage_is_ready(void)
+{
+    return s_storage_initialized;
 }
 
 uint32_t ir_get_saved_recording_count(void)
@@ -766,9 +798,9 @@ esp_err_t ir_get_storage_info(uint32_t *total_bytes, uint32_t *used_bytes)
     }
 
     size_t total = 0, used = 0;
-    esp_err_t ret = esp_spiffs_info(NULL, &total, &used);
+    esp_err_t ret = esp_littlefs_info(NULL, &total, &used);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get SPIFFS info: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to get LittleFS info: %s", esp_err_to_name(ret));
         return ret;
     }
 

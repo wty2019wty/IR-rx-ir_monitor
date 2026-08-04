@@ -45,7 +45,13 @@ static esp_err_t oled_write_cmd(const uint8_t *cmds, size_t len)
     }
     pkt[0] = 0x00; /* control byte: command stream */
     memcpy(pkt + 1, cmds, len);
-    return i2c_master_transmit(s_oled_dev, pkt, len + 1, pdMS_TO_TICKS(100));
+    esp_err_t ret;
+    for (int retry = 0; retry < 3; retry++) {
+        ret = i2c_master_transmit(s_oled_dev, pkt, len + 1, pdMS_TO_TICKS(100));
+        if (ret == ESP_OK) return ESP_OK;
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    return ret;
 }
 
 esp_err_t oled_init(void)
@@ -124,7 +130,11 @@ void oled_flush(void)
         uint8_t pkt[129];
         pkt[0] = 0x40; /* control byte: data stream */
         memcpy(pkt + 1, s_fb + i, 128);
-        i2c_master_transmit(s_oled_dev, pkt, sizeof(pkt), pdMS_TO_TICKS(100));
+        for (int retry = 0; retry < 3; retry++) {
+            esp_err_t ret = i2c_master_transmit(s_oled_dev, pkt, sizeof(pkt), pdMS_TO_TICKS(100));
+            if (ret == ESP_OK) break;
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
     }
 }
 

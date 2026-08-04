@@ -70,7 +70,9 @@
 IR-rx-ir_monitor/
 ├── CMakeLists.txt
 ├── sdkconfig.defaults        # esp32s3 / 16MB flash / 8MB 八线 PSRAM
-├── partitions.csv            # 自定义分区表（含 SPIFFS 存储分区）
+├── partitions.csv            # 自定义分区表（含 LittleFS 存储分区）
+├── components/
+│   └── esp_littlefs/         # LittleFS 文件系统组件（第三方）
 ├── main/
 │   ├── CMakeLists.txt
 │   ├── Kconfig.projbuild     # 引脚、OLED 地址、载波频率等可配置项
@@ -97,6 +99,9 @@ idf.py build
 idf.py -p COMx flash monitor
 ```
 
+> **首次烧录前**：需将 `esp_littlefs` 组件放入 `components/` 目录（见工程结构）。
+> 首次烧录时 LittleFS 分区会自动格式化。
+
 如需修改引脚或 OLED 参数：
 
 ```powershell
@@ -106,7 +111,8 @@ idf.py menuconfig
 
 ## 实现说明
 
-- 启动时 OLED 显示初始化进度（Init RMT / Init Storage / Start RX / Starting UI）
+- 启动流程：OLED init → RMT init → 后台异步挂载 LittleFS → UI 立即可用。
+  存储就绪后自动开始 IR 接收。主菜单、RAW、NEC 监控无需等待存储初始化。
 - RMT RX 使用 500kHz 分辨率（1 tick = 2us），DMA 缓冲 256 个 symbol，
   空闲 50ms 判定一帧结束。
 - RMT TX 同样使用 500kHz 分辨率，支持 38kHz 载波调制（可通过 menuconfig 修改频率和占空比）。
@@ -117,9 +123,10 @@ idf.py menuconfig
 - I2C 使用同步模式并在启动时自动探测 OLED 地址（先 0x3C 后 0x3D），
   若探测失败会在串口日志中明确提示，便于排查接线/供电/地址问题。
 - 界面文本为 ASCII（128x64 无法容纳中文 5x7 字号）。
-- 录制功能使用 SPIFFS 文件系统存储，每个录制保存为独立的二进制文件（`ir_xxx.bin`）。
+- 录制功能使用 LittleFS 文件系统存储，支持掉电安全，比 SPIFFS 挂载更快。
+  每个录制保存为独立的二进制文件（`ir_xxx.bin`）。
 - 录制文件格式：文件头（64字节）+ RMT 符号数据（每个符号4字节）。
 - 支持最多 50 个录制，每个录制最多 256 个 RMT 符号。
 - 回放功能通过独立的 FreeRTOS 任务执行，支持连续回放3次。
-- 使用自定义分区表，为 SPIFFS 分配约 14MB 存储空间（可存储大量录制）。
+- 使用自定义分区表，为 LittleFS 分配约 14MB 存储空间（可存储大量录制）。
 - RMT ISR 使用简单标志变量代替 FreeRTOS 队列，避免 DMA 中断兼容性问题。

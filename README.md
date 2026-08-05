@@ -28,10 +28,14 @@
 
 
 
-> ⚠️ 重要：N16R8 模块启用 8MB 八线 PSRAM 时，GPIO33-37 被 PSRAM 占用
-> （GPIO36=SPIIO7、GPIO37=SPIDQS），**不能**用作普通 GPIO，否则会损坏 PSRAM 访问
-> 导致看门狗复位。GPIO26-32 为 Flash 引脚同样不可用。请避开这些引脚。
-> 引脚可在 `idf.py menuconfig` → "IR Monitor Configuration" 中修改。
+> ~~⚠️ **重要**：N16R8 模块启用 8MB 八线 PSRAM 时，GPIO33-37 被 PSRAM 占用
+> （GPIO36=SPIIO7、GPIO37=SPIDQS），**不能**用作普通 GPIO。因此按键沿用了
+> `IR-rx-ir_monitor` 的 GPIO39/38/1/2 方案，而不是 Axeuh_UI 示例里的
+> GPIO39/38/37/36。所有引脚均可在 `idf.py menuconfig` → "IR Remote Tool
+> Configuration" 中修改；OLED 引脚/地址在 "Axeuh_UI Configuration" 中修改。~~
+>
+> 注：当前存储使用 **LittleFS**，不涉及 PSRAM 引脚占用问题。
+> ![](./ESP32-S3.png)
 
 ## 操作说明
 
